@@ -1,61 +1,62 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import time
+import urllib.parse
 
 # Load numbers
-with open("numbers.txt", "r") as file:
+with open("numbers.txt", "r", encoding="utf-8") as file:
     numbers = [line.strip() for line in file]
 
 # Your message
-message = "Hello! This is my test message with Selenium."
+message = "Your message"
 
-# Setup Chrome
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+# Setup
+options = webdriver.ChromeOptions()
+options.add_argument(r"--user-data-dir=C:\Users\Administrator\AppData\Local\Google\Chrome\SeleniumProfile")
+options.add_argument("--profile-directory=Default")
+
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+# Open WhatsApp Web
 driver.get("https://web.whatsapp.com")
+input("Scan QR and press ENTER when ready...")
 
-# Wait for you to scan QR code manually
-print("Scan QR code and press Enter here...")
-input()
-
-# Send messages
+# Loop
 for number in numbers:
-    print(f"Sending to {number}...")
-    driver.get(f"https://wa.me/{number}")
-    time.sleep(5)
+    encoded_message = urllib.parse.quote(message)
+    url = f"https://web.whatsapp.com/send?phone={number}&text={encoded_message}"
+    driver.get(url)
+    print(f"Checking {number}...")
 
-    # Click 'Continue to Chat'
     try:
-        continue_button = driver.find_element(By.XPATH, "//a[contains(@href, 'send?phone')]")
-        continue_button.click()
-    except:
-        print(f"Could not find Continue button for {number}. Skipping.")
-        continue
+        wait = WebDriverWait(driver, 20)
 
-    time.sleep(5)
-
-    # Switch to WhatsApp web
-    try:
-        use_whatsapp = driver.find_element(By.XPATH, "//a[contains(@href, '/accept')]")
-        use_whatsapp.click()
-    except:
-        pass  # Sometimes it goes straight to chat
-
-    time.sleep(10)
-
-    # Type and send the message
-    try:
-        msg_box = driver.find_element(By.XPATH, "//div[@title='Type a message']")
-        msg_box.click()
-        msg_box.send_keys(message)
-        msg_box.send_keys(Keys.ENTER)
+        # Wait for either Send button or "invalid number" banner
+        send_button = wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'button[aria-label="Send"]'))
+        )
+        
+        # Click Send
+        driver.execute_script(
+            "document.querySelector('button[aria-label=\"Send\"]').click();"
+        )
         print(f"Sent to {number}")
-    except:
-        print(f"Could not send to {number}")
 
-    time.sleep(5)  # Wait before next
+    except:
+        # Check if error banner exists
+        try:
+            error_banner = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, "//div[contains(text(),'Phone number shared via URL is invalid')]"))
+            )
+            print(f"Skipped invalid number: {number}")
+        except:
+            print(f"Skipped {number} — reason unknown (slow net?)")
+
+    time.sleep(2)
 
 print("Done!")
 driver.quit()
